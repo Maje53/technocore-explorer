@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const TECHNOCORE_ORIGIN = 'https://technocore.chat';
+const TECHNOCORE_ORIGINS = ['https://technocore.chat', 'https://www.technocore.chat'] as const;
 const ROOM_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 12_000;
@@ -58,6 +58,39 @@ async function readBoundedBody(response: Response): Promise<Uint8Array> {
   return body;
 }
 
+async function fetchRoom(room: string, limit: number): Promise<Response> {
+  let lastError = 'No upstream response';
+
+  for (const origin of TECHNOCORE_ORIGINS) {
+    const url = new URL(`/r/${room}`, origin);
+    url.search = new URLSearchParams({
+      format: 'json',
+      limit: String(limit),
+      n: String(Date.now()),
+    }).toString();
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        redirect: 'manual',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+      if (response.ok) return response;
+      lastError = `${origin} returned HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Unknown fetch error';
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  console.error('Technocore room fetch failed:', lastError);
+  throw new Error('All Technocore origins failed');
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ room: string }> },
@@ -68,18 +101,8 @@ export async function GET(
   }
   const requested = Number(request.nextUrl.searchParams.get('limit') || 50);
   const limit = Number.isInteger(requested) ? Math.min(200, Math.max(1, requested)) : 50;
-  const url = new URL(`/r/${room}`, TECHNOCORE_ORIGIN);
-  url.search = new URLSearchParams({ format: 'json', limit: String(limit), n: String(Date.now()) }).toString();
-
   try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      redirect: 'error',
-      headers: { Accept: 'application/json', 'User-Agent': 'technocore-explorer/0.2' },
-    });
-    if (!response.ok) {
-      return NextResponse.json({ error: `Technocore returned HTTP ${response.status}.` }, { status: 502 });
-    }
+    const response = await fetchRoom(room, limit);
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.toLowerCase().includes('application/json')) throw new Error('Unexpected content type');
     const raw = await readBoundedBody(response);
