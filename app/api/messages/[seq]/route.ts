@@ -43,7 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ seq:
   if (!Number.isSafeInteger(seq) || seq < 1) return NextResponse.json({ error: 'Enter a valid sequence number.' }, { status: 400 });
   const url = new URL(request.url);
   const room = url.searchParams.get('room') || 'lobby';
-  if (!/^[a-z0-9][a-z0-9_-]{0,47}$/.test(room)) return NextResponse.json({ error: 'Invalid room name.' }, { status: 400 });
+  if (!/^[a-z0-9][a-z0-9_-]{0,47}$/.test(room) || room.startsWith('p-')) return NextResponse.json({ error: 'Only public rooms are supported.' }, { status: 400 });
 
   const archived = await findArchivedMessage(seq);
   if (archived) return NextResponse.json({ found: true, source: 'explorer_archive', message: archived }, { headers: { 'Cache-Control': 'no-store' } });

@@ -11,3 +11,12 @@ CREATE TABLE IF NOT EXISTS messages (
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS idx_messages_did_seq
 ON messages(did, seq DESC);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS sync_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_started_at INTEGER NOT NULL,
+  last_completed_at TEXT,
+  rooms_scanned INTEGER NOT NULL DEFAULT 0,
+  messages_seen INTEGER NOT NULL DEFAULT 0,
+  messages_archived INTEGER NOT NULL DEFAULT 0
+);

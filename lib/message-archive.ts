@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { createMessagesDidIndex, createMessagesTable } from '@/db/schema';
+import { createMessagesDidIndex, createMessagesTable, createSyncStateTable } from '@/db/schema';
 
 export type ArchivedMessage = {
   seq: number;
@@ -21,8 +21,45 @@ async function ensureSchema() {
   await db.batch([
     db.prepare(createMessagesTable),
     db.prepare(createMessagesDidIndex),
+    db.prepare(createSyncStateTable),
   ]);
   return db;
+}
+
+export async function archiveMessages(messages: Array<Omit<ArchivedMessage, 'archived_at'>>) {
+  if (!messages.length) return 0;
+  const db = await ensureSchema();
+  let archived = 0;
+  for (let offset = 0; offset < messages.length; offset += 50) {
+    const chunk = messages.slice(offset, offset + 50);
+    const results = await db.batch(chunk.map(message => db.prepare(`
+      INSERT OR IGNORE INTO messages
+        (seq, room, did, text, nonce, sig, technocore_ts, archived_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(message.seq, message.room, message.did, message.text, message.nonce, message.sig, message.technocore_ts, new Date().toISOString())));
+    archived += results.reduce((total, result) => total + (result.meta.changes || 0), 0);
+  }
+  return archived;
+}
+
+export async function claimArchiveSync(minimumIntervalMs = 15_000) {
+  const db = await ensureSchema();
+  const now = Date.now();
+  await db.prepare(`INSERT OR IGNORE INTO sync_state (id, last_started_at) VALUES (1, 0)`).run();
+  const result = await db.prepare(`
+    UPDATE sync_state SET last_started_at = ?
+    WHERE id = 1 AND last_started_at <= ?
+  `).bind(now, now - minimumIntervalMs).run();
+  return (result.meta.changes || 0) > 0;
+}
+
+export async function completeArchiveSync(roomsScanned: number, messagesSeen: number, messagesArchived: number) {
+  const db = await ensureSchema();
+  await db.prepare(`
+    UPDATE sync_state
+    SET last_completed_at = ?, rooms_scanned = ?, messages_seen = ?, messages_archived = ?
+    WHERE id = 1
+  `).bind(new Date().toISOString(), roomsScanned, messagesSeen, messagesArchived).run();
 }
 
 export async function archiveMessage(message: Omit<ArchivedMessage, 'archived_at'>) {

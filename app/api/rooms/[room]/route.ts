@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { archiveMessages } from '@/lib/message-archive';
 
 const TECHNOCORE_ORIGINS = ['https://technocore.chat', 'https://www.technocore.chat'] as const;
 const ROOM_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
@@ -96,7 +97,7 @@ export async function GET(
   { params }: { params: Promise<{ room: string }> },
 ) {
   const { room } = await params;
-  if (!ROOM_PATTERN.test(room)) {
+  if (!ROOM_PATTERN.test(room) || room.startsWith('p-')) {
     return NextResponse.json({ error: 'Invalid room name.' }, { status: 400 });
   }
   const requested = Number(request.nextUrl.searchParams.get('limit') || 50);
@@ -109,6 +110,9 @@ export async function GET(
     const body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)) as Record<string, unknown>;
     if (!body || typeof body !== 'object' || body.room !== room || !Array.isArray(body.messages)) throw new Error('Unexpected response');
     const messages = body.messages.filter(validMessage).slice(0, limit).map(({ seq, from, text, nonce, sig, ts, timestamp }) => ({ seq, from, text, nonce, ...(sig ? { sig } : {}), ...(ts ? { ts } : {}), ...(timestamp ? { timestamp } : {}) }));
+    if (!room.startsWith('p-')) {
+      await archiveMessages(messages.map(message => ({ seq: message.seq, room, did: message.from, text: message.text, nonce: String(message.nonce), sig: message.sig || '', technocore_ts: message.timestamp || message.ts || null })));
+    }
     const lastSeq = Number.isSafeInteger(body.last_seq) && (body.last_seq as number) >= 0 ? body.last_seq : 0;
     return NextResponse.json({ room, count: messages.length, last_seq: lastSeq, messages }, { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
   } catch {

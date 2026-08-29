@@ -45,7 +45,7 @@ async function forward(room: string, body: Record<string, string>) {
 
 export async function POST(request: NextRequest, context: { params: Promise<{ room: string }> }) {
   const { room } = await context.params;
-  if (!ROOM_PATTERN.test(room)) return NextResponse.json({ error: 'Invalid room name.' }, { status: 400 });
+  if (!ROOM_PATTERN.test(room) || room.startsWith('p-')) return NextResponse.json({ error: 'Only public rooms are supported.' }, { status: 400 });
   let input: SignedMessage;
   try { input = await request.json() as SignedMessage; } catch { return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 }); }
   const did = typeof input.did === 'string' ? input.did : '';
