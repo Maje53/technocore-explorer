@@ -52,3 +52,15 @@ export async function findArchivedMessage(seq: number) {
     LIMIT 1
   `).bind(seq).first<ArchivedMessage>();
 }
+
+export async function findArchivedMessagesByDid(did: string, limit = 100) {
+  const db = await ensureSchema();
+  const result = await db.prepare(`
+    SELECT seq, room, did, text, nonce, sig, technocore_ts, archived_at
+    FROM messages
+    WHERE did = ?
+    ORDER BY seq DESC
+    LIMIT ?
+  `).bind(did, Math.min(100, Math.max(1, limit))).all<ArchivedMessage>();
+  return result.results;
+}

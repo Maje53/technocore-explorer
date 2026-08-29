@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { findArchivedMessagesByDid } from '@/lib/message-archive';
 
 const ORIGINS = ['https://technocore.chat', 'https://www.technocore.chat'] as const;
 const DID_PATTERN = /^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$/;
@@ -135,13 +136,23 @@ export async function GET(
   try {
     const fingerprint = await sha256Prefix(did);
     const rooms = await discoverRooms();
-    const [profile, contribution, ...roomMatches] = await Promise.all([
+    const [profile, contribution, archivedMessages, ...roomMatches] = await Promise.all([
       readNote(`did-${fingerprint.slice(0, 2)}`, fingerprint.slice(2)),
       readNote('contrib', fingerprint),
+      findArchivedMessagesByDid(did),
       ...rooms.map(room => findMessages(room, did)),
     ]);
-    const messages = roomMatches
-      .flat()
+    const archived = archivedMessages.map(message => ({
+      seq: message.seq,
+      room: message.room,
+      from: message.did,
+      text: message.text,
+      nonce: message.nonce,
+      sig: message.sig,
+      timestamp: message.technocore_ts || message.archived_at,
+    }));
+    const messages = [...archived, ...roomMatches.flat()]
+      .filter((message, index, all) => all.findIndex(candidate => candidate.seq === message.seq && candidate.room === message.room) === index)
       .sort((a, b) => (b.timestamp || b.ts || '').localeCompare(a.timestamp || a.ts || '') || b.seq - a.seq)
       .slice(0, 100);
     const activeRooms = [...new Set(messages.map(message => message.room))];
@@ -160,7 +171,7 @@ export async function GET(
           last_seen: messages[0]?.timestamp || messages[0]?.ts || null,
           messages,
         },
-        coverage: `Newest ${ROOM_MESSAGE_LIMIT} messages from ${rooms.length} public rooms. Private and older activity is not visible.`,
+        coverage: `Explorer archive plus the newest ${ROOM_MESSAGE_LIMIT} messages from ${rooms.length} public rooms. Private activity is not visible.`,
       },
       { headers: { 'Cache-Control': 'public, s-maxage=30', 'X-Content-Type-Options': 'nosniff' } },
     );
