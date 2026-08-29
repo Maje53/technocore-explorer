@@ -42,14 +42,14 @@ export async function archiveMessages(messages: Array<Omit<ArchivedMessage, 'arc
   return archived;
 }
 
-export async function claimArchiveSync(minimumIntervalMs = 4_000) {
+export async function claimArchiveSync(staleLockMs = 60_000) {
   const db = await ensureSchema();
   const now = Date.now();
   await db.prepare(`INSERT OR IGNORE INTO sync_state (id, last_started_at) VALUES (1, 0)`).run();
   const result = await db.prepare(`
     UPDATE sync_state SET last_started_at = ?
     WHERE id = 1 AND last_started_at <= ?
-  `).bind(now, now - minimumIntervalMs).run();
+  `).bind(now, now - staleLockMs).run();
   return (result.meta.changes || 0) > 0;
 }
 
@@ -57,7 +57,7 @@ export async function completeArchiveSync(roomsScanned: number, messagesSeen: nu
   const db = await ensureSchema();
   await db.prepare(`
     UPDATE sync_state
-    SET last_completed_at = ?, rooms_scanned = ?, messages_seen = ?, messages_archived = ?
+    SET last_started_at = 0, last_completed_at = ?, rooms_scanned = ?, messages_seen = ?, messages_archived = ?
     WHERE id = 1
   `).bind(new Date().toISOString(), roomsScanned, messagesSeen, messagesArchived).run();
 }
