@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { createMessagesDidIndex, createMessagesTable, createSyncStateTable } from '@/db/schema';
+import { createMessagesDidIndex, createMessagesTable, createRoomSyncStateTable, createSyncStateTable } from '@/db/schema';
 
 export type ArchivedMessage = {
   seq: number;
@@ -22,6 +22,7 @@ async function ensureSchema() {
     db.prepare(createMessagesTable),
     db.prepare(createMessagesDidIndex),
     db.prepare(createSyncStateTable),
+    db.prepare(createRoomSyncStateTable),
   ]);
   return db;
 }
@@ -80,14 +81,33 @@ export async function archiveMessage(message: Omit<ArchivedMessage, 'archived_at
   ).run();
 }
 
-export async function findArchivedMessage(seq: number) {
+export async function findArchivedMessage(seq: number, room: string) {
   const db = await ensureSchema();
   return db.prepare(`
     SELECT seq, room, did, text, nonce, sig, technocore_ts, archived_at
     FROM messages
-    WHERE seq = ?
+    WHERE seq = ? AND room = ?
     LIMIT 1
-  `).bind(seq).first<ArchivedMessage>();
+  `).bind(seq, room).first<ArchivedMessage>();
+}
+
+export async function claimRoomSync(room: string, staleLockMs = 15_000) {
+  const db = await ensureSchema();
+  const now = Date.now();
+  await db.prepare(`INSERT OR IGNORE INTO room_sync_state (room, last_started_at) VALUES (?, 0)`).bind(room).run();
+  const result = await db.prepare(`
+    UPDATE room_sync_state SET last_started_at = ?
+    WHERE room = ? AND last_started_at <= ?
+  `).bind(now, room, now - staleLockMs).run();
+  return (result.meta.changes || 0) > 0;
+}
+
+export async function completeRoomSync(room: string) {
+  const db = await ensureSchema();
+  await db.prepare(`
+    UPDATE room_sync_state SET last_started_at = 0, last_completed_at = ?
+    WHERE room = ?
+  `).bind(new Date().toISOString(), room).run();
 }
 
 export async function findArchivedMessagesByDid(did: string, limit = 100) {

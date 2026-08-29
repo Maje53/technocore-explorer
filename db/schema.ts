@@ -1,13 +1,14 @@
 export const createMessagesTable = `
 CREATE TABLE IF NOT EXISTS messages (
-  seq INTEGER PRIMARY KEY,
+  seq INTEGER NOT NULL,
   room TEXT NOT NULL,
   did TEXT NOT NULL,
   text TEXT NOT NULL,
   nonce TEXT NOT NULL,
   sig TEXT NOT NULL,
   technocore_ts TEXT,
-  archived_at TEXT NOT NULL
+  archived_at TEXT NOT NULL,
+  PRIMARY KEY (room, seq)
 )`;
 
 export const createMessagesDidIndex = `
@@ -23,5 +24,13 @@ CREATE TABLE IF NOT EXISTS sync_state (
   rooms_scanned INTEGER NOT NULL DEFAULT 0,
   messages_seen INTEGER NOT NULL DEFAULT 0,
   messages_archived INTEGER NOT NULL DEFAULT 0
+)
+`;
+
+export const createRoomSyncStateTable = `
+CREATE TABLE IF NOT EXISTS room_sync_state (
+  room TEXT PRIMARY KEY,
+  last_started_at INTEGER NOT NULL,
+  last_completed_at TEXT
 )
 `;
