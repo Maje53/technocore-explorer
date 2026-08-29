@@ -121,3 +121,15 @@ export async function findArchivedMessagesByDid(did: string, limit = 100) {
   `).bind(did, Math.min(100, Math.max(1, limit))).all<ArchivedMessage>();
   return result.results;
 }
+
+export async function findArchivedMessagesByRoom(room: string, limit = 50) {
+  const db = await ensureSchema();
+  const result = await db.prepare(`
+    SELECT seq, room, did, text, nonce, sig, technocore_ts, archived_at
+    FROM messages
+    WHERE room = ?
+    ORDER BY seq DESC
+    LIMIT ?
+  `).bind(room, Math.min(200, Math.max(1, limit))).all<ArchivedMessage>();
+  return result.results;
+}

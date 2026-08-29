@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { archiveMessages, claimRoomSync, completeRoomSync } from '@/lib/message-archive';
+import { archiveMessages, claimRoomSync, completeRoomSync, findArchivedMessagesByRoom } from '@/lib/message-archive';
 
 const ORIGINS = ['https://technocore.chat', 'https://www.technocore.chat'] as const;
 const ROOM_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
@@ -11,6 +11,23 @@ function validMessage(value: unknown): value is PublicMessage {
   if (!value || typeof value !== 'object') return false;
   const message = value as Record<string, unknown>;
   return Number.isSafeInteger(message.seq) && (message.seq as number) > 0 && typeof message.from === 'string' && DID_PATTERN.test(message.from) && typeof message.text === 'string' && message.text.length <= 4096 && (typeof message.nonce === 'string' || Number.isSafeInteger(message.nonce)) && (message.sig === undefined || typeof message.sig === 'string');
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ room: string }> }) {
+  const { room } = await params;
+  if (!ROOM_PATTERN.test(room) || room.startsWith('p-')) return NextResponse.json({ error: 'Only public rooms are supported.' }, { status: 400 });
+  const requested = Number(new URL(request.url).searchParams.get('limit') || 50);
+  const limit = Number.isInteger(requested) ? Math.min(200, Math.max(1, requested)) : 50;
+  const archived = await findArchivedMessagesByRoom(room, limit);
+  const messages = archived.map(message => ({
+    seq: message.seq,
+    from: message.did,
+    text: message.text,
+    nonce: message.nonce,
+    ...(message.sig ? { sig: message.sig } : {}),
+    ...(message.technocore_ts ? { timestamp: message.technocore_ts } : { timestamp: message.archived_at }),
+  }));
+  return NextResponse.json({ room, count: messages.length, last_seq: messages[0]?.seq || 0, messages, source: 'explorer_archive' }, { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
 async function fetchRoom(room: string) {
