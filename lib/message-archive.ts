@@ -42,7 +42,7 @@ export async function archiveMessages(messages: Array<Omit<ArchivedMessage, 'arc
   return archived;
 }
 
-export async function claimArchiveSync(minimumIntervalMs = 15_000) {
+export async function claimArchiveSync(minimumIntervalMs = 4_000) {
   const db = await ensureSchema();
   const now = Date.now();
   await db.prepare(`INSERT OR IGNORE INTO sync_state (id, last_started_at) VALUES (1, 0)`).run();
