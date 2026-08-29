@@ -25,7 +25,7 @@ async function findRecent(seq: number, room: string) {
     const timeout = setTimeout(() => controller.abort(), 8_000);
     try {
       const url = new URL(`/r/${room}`, origin);
-      url.search = new URLSearchParams({ format: 'json', since: String(seq - 1), limit: '1', n: String(Date.now()) }).toString();
+      url.search = new URLSearchParams({ format: 'json', since: String(seq - 1), limit: '200', n: String(Date.now()) }).toString();
       const response = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store', redirect: 'manual', signal: controller.signal });
       if (!response.ok) continue;
       const body = await response.json() as { messages?: unknown[] };

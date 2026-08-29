@@ -14,7 +14,7 @@ function validMessage(value: unknown): value is PublicMessage {
 }
 
 async function fetchRoom(room: string) {
-  for (const origin of ORIGINS) {
+  for (const origin of [ORIGINS[0], ORIGINS[0], ORIGINS[1]]) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6_000);
     try {
@@ -29,7 +29,7 @@ async function fetchRoom(room: string) {
     } catch { /* Try the next fixed origin. */ }
     finally { clearTimeout(timeout); }
   }
-  return [];
+  return null;
 }
 
 export async function POST(_request: Request, { params }: { params: Promise<{ room: string }> }) {
@@ -38,6 +38,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ ro
   if (!await claimRoomSync(room)) return NextResponse.json({ status: 'in_progress', room }, { headers: { 'Cache-Control': 'no-store' } });
   try {
     const messages = await fetchRoom(room);
+    if (!messages) return NextResponse.json({ status: 'upstream_unavailable', room }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
     const archived = await archiveMessages(messages.map(message => ({ seq: message.seq, room, did: message.from, text: message.text, nonce: String(message.nonce), sig: message.sig || '', technocore_ts: message.timestamp || message.ts || null })));
     return NextResponse.json({ status: 'synced', room, seen: messages.length, archived }, { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
   } finally {
