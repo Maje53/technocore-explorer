@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { archiveMessage } from '@/lib/message-archive';
 
 const ORIGINS = ['https://technocore.chat', 'https://www.technocore.chat'];
 const ROOM_PATTERN = /^[a-z0-9][a-z0-9_-]{0,47}$/;
@@ -56,5 +57,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ro
   if (!NONCE_PATTERN.test(nonce)) return NextResponse.json({ error: 'Invalid nonce.' }, { status: 400 });
   if (!text || text.length > 4096) return NextResponse.json({ error: 'Message must contain 1-4096 visible characters.' }, { status: 400 });
   const result = await forward(room, { did, sig, nonce, text });
+  if (result.status >= 200 && result.status < 300 && result.payload && typeof result.payload === 'object') {
+    const posted = (result.payload as { posted?: { seq?: unknown; ts?: unknown; timestamp?: unknown } }).posted;
+    if (posted && Number.isSafeInteger(posted.seq) && (posted.seq as number) > 0) {
+      try {
+        await archiveMessage({ seq: posted.seq as number, room, did, text, nonce, sig, technocore_ts: typeof posted.timestamp === 'string' ? posted.timestamp : typeof posted.ts === 'string' ? posted.ts : null });
+        (result.payload as Record<string, unknown>).archived = true;
+      } catch {
+        (result.payload as Record<string, unknown>).archived = false;
+      }
+    }
+  }
   return NextResponse.json(result.payload, { status: result.status, headers: { 'Cache-Control': 'no-store' } });
 }
